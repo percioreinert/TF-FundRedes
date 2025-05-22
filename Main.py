@@ -1,3 +1,4 @@
+import binascii
 import socket
 import threading
 
@@ -64,8 +65,8 @@ def token(data, addr):
         print(f"Sending {messages} to {destination}")
 
         # ver como descobrir o nome do nodo da máquina destino
-        # ver como calcular o CRC da mensagem e colocar na mensagem formatada
-        formatted_message = f"7777:naoexiste;{node_name};destination_node;CRC;{message}"
+        crc = calculate_crc32(message)
+        formatted_message = f"7777:naoexiste;{node_name};destination_node;{crc};{message}"
 
         send_message(ip, port, formatted_message)
 
@@ -73,6 +74,12 @@ def token(data, addr):
 def send_message(ip, port, message):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.sendto(message.encode(), (ip, port))
+
+
+def calculate_crc32(message: str) -> int:
+    dados = message.encode('utf-8')
+    crc = binascii.crc32(dados) & 0xFFFFFFFF
+    return crc
 
 
 if __name__ == "__main__":
