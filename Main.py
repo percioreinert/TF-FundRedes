@@ -76,11 +76,11 @@ def token_handler(message, addr):
         send_message(ip, port, "9000")
     else:
         message = messages[0]
-        print(f"Sending {messages} to {destination}")
+        text, destiny_node_name = message.split(":")
+        print(f"Sending {text} to {destination}")
 
-        # ver como descobrir o nome do nodo da máquina destino
-        crc = calculate_crc32(message)
-        formatted_message = f"7777:naoexiste;{self_node_name};{node_name};{crc};{message}"
+        crc = calculate_crc32(text)
+        formatted_message = f"7777:naoexiste;{node_name};{destiny_node_name};{crc};{text}"
 
         send_message(ip, port, formatted_message)
 
@@ -128,8 +128,8 @@ def send_message(ip, port, message):
 
 
 def calculate_crc32(message: str) -> int:
-    dados = message.encode('utf-8')
-    crc = binascii.crc32(dados) & 0xFFFFFFFF
+    data = message.encode('utf-8')
+    crc = binascii.crc32(data) & 0xFFFFFFFF
     return crc
 
 
