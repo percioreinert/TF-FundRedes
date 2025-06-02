@@ -1,12 +1,17 @@
 import binascii
 import socket
 import threading
+import time
 
 self_node_name = "node1"
 own_ip = ""
 PORT = 5000
 config = None
 messages = []
+
+# token control
+start = None
+
 
 
 def load_config(file_path: str) -> dict:
@@ -41,6 +46,12 @@ def server():
 
     while True:
         data, addr = sock.recvfrom(1024)
+
+        # gerar o token e enviar para a próxima máquina se a config estiver em True.
+        # disparar um cronometro quando enviar o token adiante, se a config estiver em True.
+        # se o token voltar muito rápido significa que há mais do que um token na rede. Tratar.
+        # se passar o tempo do timeout (decidir ainda) reenviar o token para a próxima máquina.
+        # pensar onde fazer essa lógica.
 
         message = data.decode().strip()
         protocol = message.split(' ')[0]
@@ -83,8 +94,14 @@ def message_handler(message, addr):
 
     destination = config["destination"]
     ip, port = destination.split(":")
+    if destiny == "TODOS":
+        print(f"Broadcast message received. Moving forward the message.")
 
-    if destiny == self_node_name:
+        formatted_message = f"{protocol}:{control};{origin};{destiny};{crc};{message}"
+
+        send_message(ip, port, formatted_message)
+
+    elif destiny == self_node_name:
         crc_control = calculate_crc32(message)
 
         if not crc == crc_control:
@@ -114,6 +131,11 @@ def calculate_crc32(message: str) -> int:
     dados = message.encode('utf-8')
     crc = binascii.crc32(dados) & 0xFFFFFFFF
     return crc
+
+
+def token_control():
+    start = time.time()
+
 
 
 if __name__ == "__main__":
