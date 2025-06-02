@@ -2,6 +2,8 @@ import binascii
 import socket
 import threading
 
+self_node_name = "node1"
+own_ip = ""
 PORT = 5000
 config = None
 messages = []
@@ -44,14 +46,15 @@ def server():
         protocol = message.split(' ')[0]
 
         if protocol == "9000":
-            token(data, addr)
+            token_handler(message, addr)
         elif protocol == "7777":
-            "data"
+            message_handler(message, addr)
 
 
-def token(data, addr):
+def token_handler(message, addr):
     sender_ip = addr[0]
-    print(f"Message received from {sender_ip}")
+    print(f"Message {message} received from {sender_ip}")
+
     destination = config["destination"]
     node_name = config["node_name"]
     ip, port = destination.split(":")
@@ -66,9 +69,40 @@ def token(data, addr):
 
         # ver como descobrir o nome do nodo da máquina destino
         crc = calculate_crc32(message)
-        formatted_message = f"7777:naoexiste;{node_name};destination_node;{crc};{message}"
+        formatted_message = f"7777:naoexiste;{self_node_name};{node_name};{crc};{message}"
 
         send_message(ip, port, formatted_message)
+
+
+def message_handler(message, addr):
+    sender_ip = addr[0]
+    print(f"Message {message} received from {sender_ip}")
+
+    protocol, body = message.split(":")
+    control, origin, destiny, crc, message = body.split(";")
+
+    destination = config["destination"]
+    ip, port = destination.split(":")
+
+    if destiny == self_node_name:
+        crc_control = calculate_crc32(message)
+
+        if not crc == crc_control:
+            print(f"Message CRC32 is not correct. Moving forward the error")
+
+            formatted_message = f"{protocol}:NACK;{origin};{destiny};{crc};{message}"
+
+            send_message(ip, port, formatted_message)
+        else:
+            print(f"Message CRC32 is correct. Moving forward the message")
+
+            formatted_message = f"{protocol}:ACK;{origin};{destiny};{crc};{message}"
+
+            send_message(ip, port, formatted_message)
+    else:
+        print(f"Message {message} is not for this device. Moving forward.")
+
+        send_message(ip, port, message)
 
 
 def send_message(ip, port, message):
@@ -84,4 +118,5 @@ def calculate_crc32(message: str) -> int:
 
 if __name__ == "__main__":
     config = load_config("config.txt")
+    own_ip = get_own_ip()
     threading.Thread(target=server, daemon=True).start()
