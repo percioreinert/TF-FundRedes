@@ -50,9 +50,9 @@ def token_server():
         global has_token
         has_token = True
 
-        print("This device has ownership of the token.")
-
         while True:
+            print("Verifying token timeout...")
+
             try:
                 token_module.check_token_timeout()
             except TimeoutException:
@@ -174,6 +174,8 @@ def validate_message(received_body: str) -> bool:
 
 def start_token():
     if config["token"]:
+        print("This device has ownership of the token.")
+        print("Starting token and sending to the device on the right.")
         token_module.start_token_time()
 
         destination = config["destination"]
@@ -210,8 +212,8 @@ class Interface(cmd.Cmd):
         return True
 
     def do_start(self, arg):
-        run_server()
         start_token()
+        run_server()
         print("Servidor iniciado em background.")
 
 
