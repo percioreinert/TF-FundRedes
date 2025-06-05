@@ -1,17 +1,18 @@
 import binascii
+import cmd
 import socket
 import threading
 import time
 
-self_node_name = "node1"
-own_ip = ""
+from TokenHandler import TokenHandler, TooManyTokensException, TimeoutException
+
 PORT = 5000
 config = None
 messages = []
+has_token = False
+sent_message: str = ""
 
-# token control
-start = None
-
+token_module: TokenHandler = TokenHandler()
 
 
 def load_config(file_path: str) -> dict:
@@ -27,18 +28,6 @@ def load_config(file_path: str) -> dict:
     return node_config
 
 
-def get_own_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-    except Exception:
-        ip = "127.0.0.1"
-    finally:
-        s.close()
-    return ip
-
-
 def server():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -46,12 +35,6 @@ def server():
 
     while True:
         data, addr = sock.recvfrom(1024)
-
-        # gerar o token e enviar para a próxima máquina se a config estiver em True.
-        # disparar um cronometro quando enviar o token adiante, se a config estiver em True.
-        # se o token voltar muito rápido significa que há mais do que um token na rede. Tratar.
-        # se passar o tempo do timeout (decidir ainda) reenviar o token para a próxima máquina.
-        # pensar onde fazer essa lógica.
 
         message = data.decode().strip()
         protocol = message.split(' ')[0]
@@ -62,18 +45,48 @@ def server():
             message_handler(message, addr)
 
 
+def token_server():
+    if config["token"]:
+        global has_token
+        has_token = True
+
+        print("This device has ownership of the token.")
+
+        while True:
+            try:
+                token_module.check_token_timeout()
+            except TimeoutException:
+                print(f"ERROR: Timeout. Reinitializing token.")
+                start_token()
+            time.sleep(5)
+
+
 def token_handler(message, addr):
+    token_module.reset_token_time()
+
+    global has_token
+    has_token = True
+
     sender_ip = addr[0]
     print(f"Message {message} received from {sender_ip}")
+
+    try:
+        token_module.validate_token()
+    except TooManyTokensException:
+        print(f"ERROR: TooManyTokensException. Discarding token.")
+        has_token = False
+        return
 
     destination = config["destination"]
     node_name = config["node_name"]
     ip, port = destination.split(":")
 
+    time.sleep(config["token_time"])
+
     if len(messages) == 0:
         print(f"No messages to send. Moving forward token to {destination}")
 
-        send_message(ip, port, "9000")
+        send_message(ip, int(port), "9000")
     else:
         message = messages[0]
         text, destiny_node_name = message.split(":")
@@ -82,7 +95,10 @@ def token_handler(message, addr):
         crc = calculate_crc32(text)
         formatted_message = f"7777:naoexiste;{node_name};{destiny_node_name};{crc};{text}"
 
-        send_message(ip, port, formatted_message)
+        global sent_message
+        sent_message = formatted_message
+
+        send_message(ip, int(port), formatted_message)
 
 
 def message_handler(message, addr):
@@ -94,14 +110,21 @@ def message_handler(message, addr):
 
     destination = config["destination"]
     ip, port = destination.split(":")
-    if destiny == "TODOS":
+
+    time.sleep(config["token_time"])
+
+    if validate_message(body):
+        global sent_message
+        sent_message = ""
+        send_message(ip, int(port), "9000")
+    elif destiny == "TODOS":
         print(f"Broadcast message received. Moving forward the message.")
 
         formatted_message = f"{protocol}:{control};{origin};{destiny};{crc};{message}"
 
-        send_message(ip, port, formatted_message)
+        send_message(ip, int(port), formatted_message)
 
-    elif destiny == self_node_name:
+    elif destiny == config.get("node_name"):
         crc_control = calculate_crc32(message)
 
         if not crc == crc_control:
@@ -109,17 +132,17 @@ def message_handler(message, addr):
 
             formatted_message = f"{protocol}:NACK;{origin};{destiny};{crc};{message}"
 
-            send_message(ip, port, formatted_message)
+            send_message(ip, int(port), formatted_message)
         else:
             print(f"Message CRC32 is correct. Moving forward the message")
 
             formatted_message = f"{protocol}:ACK;{origin};{destiny};{crc};{message}"
 
-            send_message(ip, port, formatted_message)
+            send_message(ip, int(port), formatted_message)
     else:
         print(f"Message {message} is not for this device. Moving forward.")
 
-        send_message(ip, port, message)
+        send_message(ip, int(port), message)
 
 
 def send_message(ip, port, message):
@@ -133,12 +156,65 @@ def calculate_crc32(message: str) -> int:
     return crc
 
 
-def token_control():
-    start = time.time()
+def validate_message(received_body: str) -> bool:
+    global sent_message
 
+    protocol, body = sent_message.split(":")
+    control, origin, destiny, crc, message = body.split(";")
+    control_string = f"{origin}:{destiny};{crc};{message}"
+
+    received_control, received_origin, received_destiny, received_crc, received_message = received_body.split(";")
+    control_received_string = f"{received_origin}:{received_destiny};{received_crc};{received_message}"
+
+    if control_string == control_received_string and not received_control == "naoexiste":
+        return True
+    else:
+        return False
+
+
+def start_token():
+    if config["token"]:
+        token_module.start_token_time()
+
+        destination = config["destination"]
+        ip, port = destination.split(":")
+
+        send_message(ip, int(port), "9000")
+
+
+def run_server():
+    threading.Thread(target=server, daemon=True).start()
+    threading.Thread(target=token_server, daemon=True).start()
+
+
+class Interface(cmd.Cmd):
+    intro = "Bem-vindo ao nó da rede! Digite 'help' para ver os comandos disponíveis."
+    prompt = ">>> "
+
+    def do_add_message(self, arg):
+        try:
+            messages.append(arg)
+            print(f"Mensagem enfileirada: {arg}")
+        except ValueError:
+            print("Uso: add_message \"mensagem\"")
+
+    def do_status(self, arg):
+        print(f"Nome do nó: {config['node_name']}")
+        print(f"Destino configurado: {config['destination']}")
+        print(f"Responsável pelo token? {config['token']}")
+        print(f"Tempo do token {config['token_time']}")
+        print(f"Mensagens pendentes: {messages}")
+
+    def do_exit(self, arg):
+        print("Encerrando...")
+        return True
+
+    def do_start(self, arg):
+        run_server()
+        start_token()
+        print("Servidor iniciado em background.")
 
 
 if __name__ == "__main__":
     config = load_config("config.txt")
-    own_ip = get_own_ip()
-    threading.Thread(target=server, daemon=True).start()
+    Interface().cmdloop()
