@@ -3,11 +3,13 @@ import cmd
 import socket
 import threading
 import time
+from collections import deque
 
 from TokenHandler import TokenHandler, TooManyTokensException, TimeoutException
 
-PORT = 5000
+PORT = 6000
 config = None
+fila = deque()
 messages = []
 has_token = False
 sent_message: str = ""
@@ -38,6 +40,8 @@ def server():
 
         message = data.decode().strip()
         protocol = message.split(' ')[0]
+
+        print(message)
 
         if protocol == "9000":
             token_handler(message, addr)
@@ -70,25 +74,18 @@ def token_handler(message, addr):
     sender_ip = addr[0]
     print(f"Message {message} received from {sender_ip}")
 
-    try:
-        token_module.validate_token()
-    except TooManyTokensException:
-        print(f"ERROR: TooManyTokensException. Discarding token.")
-        has_token = False
-        return
-
     destination = config["destination"]
     node_name = config["node_name"]
     ip, port = destination.split(":")
 
     time.sleep(config["token_time"])
 
-    if len(messages) == 0:
+    if len(fila) == 0:
         print(f"No messages to send. Moving forward token to {destination}")
 
         send_message(ip, int(port), "9000")
     else:
-        message = messages[0]
+        message = fila.popleft()
         text, destiny_node_name = message.split(":")
         print(f"Sending {text} to {destination}")
 
@@ -195,7 +192,7 @@ class Interface(cmd.Cmd):
 
     def do_add_message(self, arg):
         try:
-            messages.append(arg)
+            fila.append(arg)
             print(f"Mensagem enfileirada: {arg}")
         except ValueError:
             print("Uso: add_message \"mensagem\"")
