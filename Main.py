@@ -39,7 +39,7 @@ def server():
         data, addr = sock.recvfrom(1024)
 
         message = data.decode().strip()
-        protocol = message.split(' ')[0]
+        protocol = message.split(':')[0]
 
         print(message)
 
