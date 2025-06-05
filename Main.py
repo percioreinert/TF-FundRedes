@@ -7,7 +7,7 @@ from collections import deque
 
 from TokenHandler import TokenHandler, TooManyTokensException, TimeoutException
 
-PORT = 6000
+PORT = 5000
 config = None
 fila = deque()
 messages = []
