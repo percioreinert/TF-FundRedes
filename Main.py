@@ -117,9 +117,7 @@ def message_handler(message, addr):
     elif destiny == "TODOS":
         print(f"Broadcast message received. Moving forward the message.")
 
-        formatted_message = f"{protocol}:{control};{origin};{destiny};{crc};{message}"
 
-        send_message(ip, int(port), formatted_message)
 
     elif destiny == config.get("node_name"):
         crc_control = calculate_crc32(message)
@@ -155,6 +153,9 @@ def calculate_crc32(message: str) -> int:
 
 def validate_message(received_body: str) -> bool:
     global sent_message
+
+    if not sent_message or ":" not in sent_message:
+        return False
 
     protocol, body = sent_message.split(":")
     control, origin, destiny, crc, message = body.split(";")
